@@ -22,10 +22,7 @@ BookPulse is an end-to-end book recommendation system that learns only from the 
 - [Getting Started](#getting-started)
 - [Configuration](#configuration)
 - [API Reference](#api-reference)
-- [Deployment](#deployment)
-- [Limitations](#limitations)
-- [Roadmap](#roadmap)
-- [License](#license)
+  
 
 ## Features
 
