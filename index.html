@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inkling</title>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"></script>
+  <style>
+    :root { --bg:#faf7f2; --card:#fff; --ink:#2a2420; --muted:#7a6f66; --accent:#b5483a; --line:#e8e0d6; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg:#1d1916; --card:#26211d; --ink:#f1e9e0; --muted:#a39888; --accent:#e07a68; --line:#3a332d; }
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink); font-family: Georgia, "Times New Roman", serif; }
+    main { max-width: 760px; margin: 0 auto; padding: 20px 16px 60px; }
+    h1 { margin: 0 0 4px; } header p { color: var(--muted); margin-top: 0; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin:16px 0; }
+    .form, .dial { display:flex; flex-direction:column; gap:8px; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; } .row > * { flex:1; min-width:120px; }
+    input, select, button { font: inherit; padding: 9px 10px; border-radius: 8px; border:1px solid var(--line); background:var(--bg); color:var(--ink); }
+    button { cursor:pointer; } button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+    button.ghost { border:none; background:none; color:var(--muted); }
+    .pick { border-top:1px dashed var(--line); padding:12px 0; } .pick h3 { margin:0; }
+    .lucky { background: color-mix(in srgb, var(--accent) 10%, transparent); padding:12px; border-radius:10px; border:none; margin-top:12px; }
+    .why { color:var(--muted); margin:6px 0; } .chips span { margin-right:8px; color:var(--accent); font-size:.85rem; }
+    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; } @media (max-width:640px){ .grid2{grid-template-columns:1fr;} }
+    ul { list-style:none; padding:0; margin:0; } li { display:flex; justify-content:space-between; gap:8px; padding:6px 0; border-bottom:1px solid var(--line); }
+    .actions { display:flex; gap:4px; } .muted { color:var(--muted); } .error { color:#c0392b; }
+    .bar { display:flex; align-items:center; gap:8px; margin:4px 0; } .bar span { width:110px; font-size:.9rem; }
+    .bar i { display:block; height:10px; background:var(--accent); border-radius:5px; }
+    progress { width:160px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useCallback } = React;
+    const MOODS = ["cozy", "light", "intense", "thoughtful", "adventurous"];
+
+    async function req(path, opts = {}) {
+      const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Please check the form fields.");
+      return data;
+    }
+    const api = {
+      books: () => req("/books"),
+      add: (b) => req("/books", { method: "POST", body: JSON.stringify(b) }),
+      finish: (id, rating) => req(`/books/${id}/finish?rating=${rating}`, { method: "PATCH" }),
+      remove: (id) => req(`/books/${id}`, { method: "DELETE" }),
+      recommend: (dial, mood, maxPages) => {
+        const p = new URLSearchParams({ dial });
+        if (mood) p.set("mood", mood);
+        if (maxPages) p.set("max_pages", maxPages);
+        return req(`/recommend?${p}`);
+      },
+      dice: () => req("/dice"),
+      insights: () => req("/insights"),
+    };
+
+    const askRating = () => {
+      const r = Number(prompt("Your rating (1-5)?", "4"));
+      return r >= 1 && r <= 5 ? r : null;
+    };
+
+    function AddBookForm({ onAdded }) {
+      const EMPTY = { title: "", author: "", tags: "", note: "", pages: "", mood: "", status: "read", rating: 5 };
+      const [f, setF] = useState(EMPTY);
+      const [err, setErr] = useState("");
+      const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+      const submit = async (e) => {
+        e.preventDefault();
+        setErr("");
+        try {
+          await api.add({
+            title: f.title, author: f.author,
+            tags: f.tags.split(",").map((t) => t.trim()).filter(Boolean),
+            note: f.note, pages: f.pages ? Number(f.pages) : null, mood: f.mood || null,
+            status: f.status, rating: f.status === "read" ? Number(f.rating) : null,
+          });
+          setF({ ...EMPTY, status: f.status });
+          onAdded();
+        } catch (ex) { setErr(ex.message); }
+      };
+      return (
+        <form className="card form" onSubmit={submit}>
+          <h2>Add a book</h2>
+          <input placeholder="Title *" value={f.title} onChange={set("title")} required />
+          <input placeholder="Author" value={f.author} onChange={set("author")} />
+          <input placeholder="Tags, comma separated (fantasy, politics, slow-burn)" value={f.tags} onChange={set("tags")} />
+          <input placeholder="One-line note (optional)" value={f.note} onChange={set("note")} />
+          <div className="row">
+            <input type="number" min="1" placeholder="Pages" value={f.pages} onChange={set("pages")} />
+            <select value={f.mood} onChange={set("mood")}>
+              <option value="">Mood (optional)</option>
+              {MOODS.map((m) => <option key={m}>{m}</option>)}
+            </select>
+          </div>
+          <div className="row">
+            <select value={f.status} onChange={set("status")}>
+              <option value="read">I've read it</option>
+              <option value="tbr">On my TBR pile</option>
+            </select>
+            {f.status === "read" && (
+              <select value={f.rating} onChange={set("rating")}>
+                {[5, 4, 3, 2, 1].map((n) => <option key={n} value={n}>{n} ★</option>)}
+              </select>
+            )}
+          </div>
+          {err && <p className="error">{err}</p>}
+          <button className="primary">Add book</button>
+        </form>
+      );
+    }
+
+    function Dial({ value, onChange }) {
+      return (
+        <div className="dial">
+          <label>Safe <b>⟷</b> Surprise: <strong>{value}%</strong></label>
+          <input type="range" min="0" max="100" value={value} onChange={(e) => onChange(Number(e.target.value))} />
+        </div>
+      );
+    }
+
+    function BookCard({ book, onFinish }) {
+      return (
+        <div className="pick">
+          <h3>{book.title}</h3>
+          <small>{[book.author, book.pages && `${book.pages} pages`].filter(Boolean).join(" · ")}</small>
+          <p className="why">{book.why}</p>
+          <div className="chips">{(book.tags || []).map((t) => <span key={t}>#{t.replace(/_/g, " ")}</span>)}</div>
+          <button onClick={() => onFinish(book.id)}>I finished it</button>
+        </div>
+      );
+    }
+
+    function Insights({ info }) {
+      if (!info.ready) return null;
+      const max = Math.max(...info.dna.map((d) => d.weight), 1e-9);
+      return (
+        <section className="card">
+          <h2>Your reading insights</h2>
+          <h4>Taste DNA</h4>
+          {info.dna.map((d) => (
+            <div className="bar" key={d.tag}><span>{d.tag}</span><i style={{ width: `${(d.weight / max) * 100}%` }} /></div>
+          ))}
+          <h4>Blind spots on your TBR</h4>
+          <p>{info.blind_spots.length ? info.blind_spots.join(", ") : "None, you read broadly."}</p>
+          <h4>Bubble Meter</h4>
+          <progress value={info.bubble} max="1" />
+          <small> {info.bubble < 0.4 ? "narrow" : info.bubble < 0.7 ? "balanced" : "broad"}</small>
+        </section>
+      );
+    }
+
+    function ShelfLists({ books, onFinish, onRemove }) {
+      const tbr = books.filter((b) => b.status === "tbr");
+      const read = books.filter((b) => b.status === "read");
+      const Row = ({ b, extra }) => (
+        <li>
+          <span><b>{b.title}</b> {b.author && <small>· {b.author}</small>} {b.rating && <em>{b.rating}★</em>}</span>
+          <span className="actions">{extra}<button className="ghost" onClick={() => onRemove(b.id)}>✕</button></span>
+        </li>
+      );
+      return (
+        <div className="grid2">
+          <section className="card">
+            <h2>TBR pile ({tbr.length})</h2>
+            <ul>{tbr.map((b) => <Row key={b.id} b={b} extra={<button onClick={() => onFinish(b.id)}>Finished</button>} />)}</ul>
+            {!tbr.length && <p className="muted">Add books you own or want to read.</p>}
+          </section>
+          <section className="card">
+            <h2>Read ({read.length})</h2>
+            <ul>{read.map((b) => <Row key={b.id} b={b} />)}</ul>
+            {!read.length && <p className="muted">Add books you've read, with ratings.</p>}
+          </section>
+        </div>
+      );
+    }
+
+    function App() {
+      const [books, setBooks] = useState([]);
+      const [rec, setRec] = useState({ state: "empty", picks: [] });
+      const [info, setInfo] = useState({});
+      const [dial, setDial] = useState(30);
+      const [mood, setMood] = useState("");
+      const [maxPages, setMaxPages] = useState("");
+      const [luck, setLuck] = useState(null);
+      const [error, setError] = useState("");
+
+      const refresh = useCallback(async () => {
+        try {
+          setError("");
+          const [b, r, i] = await Promise.all([api.books(), api.recommend(dial / 100, mood, maxPages), api.insights()]);
+          setBooks(b); setRec(r); setInfo(i);
+        } catch (e) { setError("Can't reach the server. Is uvicorn running?"); }
+      }, [dial, mood, maxPages]);
+
+      useEffect(() => { refresh(); }, [refresh]);
+
+      const roll = async () => {
+        try { setLuck(await api.dice()); } catch (e) { setLuck({ title: e.message, why: "" }); }
+      };
+      const finish = async (id) => {
+        const r = askRating();
+        if (!r) return;
+        await api.finish(id, r); setLuck(null); refresh();
+      };
+      const remove = async (id) => { await api.remove(id); refresh(); };
+
+      return (
+        <main>
+          <header>
+            <h1>📖 BookPulse</h1>
+            <p>A small hunch about what to read next. Tell it what you've read, and now and then it surprises you.</p>
+          </header>
+          {error && <p className="error">{error}</p>}
+
+          <AddBookForm onAdded={refresh} />
+
+          <section className="card">
+            <h2>What should I read next?</h2>
+            <Dial value={dial} onChange={setDial} />
+            <div className="row">
+              <select value={mood} onChange={(e) => setMood(e.target.value)}>
+                <option value="">Any mood</option>
+                {MOODS.map((m) => <option key={m}>{m}</option>)}
+              </select>
+              <input type="number" min="1" placeholder="Max pages" value={maxPages} onChange={(e) => setMaxPages(e.target.value)} />
+              <button className="primary" onClick={roll}>🎲 Roll the Dice</button>
+            </div>
+            {luck && (
+              <div className="pick lucky">
+                <h3>🎲 {luck.title}</h3>
+                <small>{luck.author}</small>
+                <p className="why">{luck.why}</p>
+              </div>
+            )}
+            {rec.state === "locked" && <p className="muted">Rate {rec.need} more book(s) you've read to unlock recommendations. Dice works already.</p>}
+            {rec.state === "empty" && <p className="muted">Add books to your TBR pile to get picks.</p>}
+            {rec.picks.map((p) => <BookCard key={p.id} book={p} onFinish={finish} />)}
+          </section>
+
+          <Insights info={info} />
+          <ShelfLists books={books} onFinish={finish} onRemove={remove} />
+        </main>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
